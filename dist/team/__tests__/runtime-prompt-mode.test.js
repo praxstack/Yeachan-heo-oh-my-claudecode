@@ -6,8 +6,8 @@ import { tmpdir } from 'os';
  * Tests for Gemini prompt-mode (headless) spawn flow.
  *
  * Gemini CLI v0.29.7+ uses an Ink-based TUI that does not receive keystrokes
- * via tmux send-keys. The fix passes the initial instruction via the `-p` flag
- * (prompt mode) so the TUI is bypassed entirely. Trust-confirm and send-keys
+ * via tmux send-keys. The fix passes the initial instruction via the `-i` flag
+ * (interactive mode) so the TUI is bypassed entirely. Trust-confirm and send-keys
  * notification are skipped for prompt-mode agents.
  *
  * See: https://github.com/anthropics/claude-code/issues/1000
@@ -109,15 +109,15 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
         cwd = mkdtempSync(join(tmpdir(), 'runtime-gemini-prompt-'));
         setupTaskDir(cwd);
     });
-    it('gemini worker launch args include -p flag with inbox path', async () => {
+    it('gemini worker launch args include -i flag with inbox path', async () => {
         const runtime = makeRuntime(cwd, 'gemini');
         await spawnWorkerForTask(runtime, 'worker-1', 0);
         // Find the send-keys call that launches the worker (contains -l flag)
         const launchCall = tmuxCalls.args.find(args => args[0] === 'send-keys' && args.includes('-l'));
         expect(launchCall).toBeDefined();
         const launchCmd = launchCall[launchCall.length - 1];
-        // Should contain -p flag for prompt mode
-        expect(launchCmd).toContain("'-p'");
+        // Should contain -i flag for interactive mode
+        expect(launchCmd).toContain("'-i'");
         // Should contain the inbox path reference
         expect(launchCmd).toContain('.omc/state/team/test-team/workers/worker-1/inbox.md');
         rmSync(cwd, { recursive: true, force: true });
@@ -151,8 +151,8 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
         const launchCall = tmuxCalls.args.find(args => args[0] === 'send-keys' && args.includes('-l'));
         expect(launchCall).toBeDefined();
         const launchCmd = launchCall[launchCall.length - 1];
-        // Should NOT contain -p flag (codex uses positional argument, not a flag)
-        expect(launchCmd).not.toContain("'-p'");
+        // Should NOT contain -i flag (codex uses positional argument, not a flag)
+        expect(launchCmd).not.toContain("'-i'");
         // Should contain the inbox path as a positional argument
         expect(launchCmd).toContain('.omc/state/team/test-team/workers/worker-1/inbox.md');
         rmSync(cwd, { recursive: true, force: true });

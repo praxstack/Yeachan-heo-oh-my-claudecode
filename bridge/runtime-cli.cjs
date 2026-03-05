@@ -764,9 +764,9 @@ var CONTRACTS = {
     binary: "gemini",
     installInstructions: "Install Gemini CLI: npm install -g @google/gemini-cli",
     supportsPromptMode: true,
-    promptModeFlag: "-p",
+    promptModeFlag: "-i",
     buildLaunchArgs(model, extraFlags = []) {
-      const args = ["--approval-mode", "yolo", "-i"];
+      const args = ["--approval-mode", "yolo"];
       if (model) args.push("--model", model);
       return [...args, ...extraFlags];
     },

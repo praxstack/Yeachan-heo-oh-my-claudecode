@@ -87,11 +87,11 @@ describe('model-contract', () => {
             expect(args).not.toContain('--full-auto');
             expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
         });
-        it('gemini includes --approval-mode yolo -i', () => {
+        it('gemini includes --approval-mode yolo', () => {
             const args = buildLaunchArgs('gemini', { teamName: 't', workerName: 'w', cwd: '/tmp' });
             expect(args).toContain('--approval-mode');
             expect(args).toContain('yolo');
-            expect(args).toContain('-i');
+            expect(args).not.toContain('-i');
         });
         it('passes model flag when specified', () => {
             const args = buildLaunchArgs('codex', { teamName: 't', workerName: 'w', cwd: '/tmp', model: 'gpt-4' });
@@ -170,7 +170,7 @@ describe('model-contract', () => {
             expect(isPromptModeAgent('gemini')).toBe(true);
             const c = getContract('gemini');
             expect(c.supportsPromptMode).toBe(true);
-            expect(c.promptModeFlag).toBe('-p');
+            expect(c.promptModeFlag).toBe('-i');
         });
         it('claude does not support prompt mode', () => {
             expect(isPromptModeAgent('claude')).toBe(false);
@@ -183,7 +183,7 @@ describe('model-contract', () => {
         });
         it('getPromptModeArgs returns flag + instruction for gemini', () => {
             const args = getPromptModeArgs('gemini', 'Read inbox');
-            expect(args).toEqual(['-p', 'Read inbox']);
+            expect(args).toEqual(['-i', 'Read inbox']);
         });
         it('getPromptModeArgs returns instruction only (positional) for codex', () => {
             const args = getPromptModeArgs('codex', 'Read inbox');

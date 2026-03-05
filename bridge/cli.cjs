@@ -19925,7 +19925,7 @@ function readCache() {
     return null;
   }
 }
-function writeCache(data, error2 = false, source) {
+function writeCache(data, error2 = false, source, rateLimited = false, rateLimitedCount = 0, errorReason) {
   try {
     const cachePath = getCachePath();
     const cacheDir = (0, import_path82.dirname)(cachePath);
@@ -19936,13 +19936,24 @@ function writeCache(data, error2 = false, source) {
       timestamp: Date.now(),
       data,
       error: error2,
-      source
+      errorReason,
+      source,
+      rateLimited: rateLimited || void 0,
+      rateLimitedCount: rateLimitedCount > 0 ? rateLimitedCount : void 0
     };
     (0, import_fs72.writeFileSync)(cachePath, JSON.stringify(cache, null, 2));
   } catch {
   }
 }
 function isCacheValid(cache) {
+  if (cache.rateLimited) {
+    const count = cache.rateLimitedCount || 1;
+    const backoffMs = Math.min(
+      CACHE_TTL_RATE_LIMITED_MS * Math.pow(2, count - 1),
+      MAX_RATE_LIMITED_BACKOFF_MS
+    );
+    return Date.now() - cache.timestamp < backoffMs;
+  }
   const ttl = cache.error ? CACHE_TTL_FAILURE_MS : CACHE_TTL_SUCCESS_MS;
   return Date.now() - cache.timestamp < ttl;
 }
@@ -20085,20 +20096,25 @@ function fetchUsageFromApi(accessToken) {
         res.on("end", () => {
           if (res.statusCode === 200) {
             try {
-              resolve11(JSON.parse(data));
+              resolve11({ data: JSON.parse(data) });
             } catch {
-              resolve11(null);
+              resolve11({ data: null });
             }
+          } else if (res.statusCode === 429) {
+            if (process.env.OMC_DEBUG) {
+              console.error(`[usage-api] Anthropic API returned 429 (rate limited)`);
+            }
+            resolve11({ data: null, rateLimited: true });
           } else {
-            resolve11(null);
+            resolve11({ data: null });
           }
         });
       }
     );
-    req.on("error", () => resolve11(null));
+    req.on("error", () => resolve11({ data: null }));
     req.on("timeout", () => {
       req.destroy();
-      resolve11(null);
+      resolve11({ data: null });
     });
     req.end();
   });
@@ -20108,13 +20124,13 @@ function fetchUsageFromZai() {
     const baseUrl = process.env.ANTHROPIC_BASE_URL;
     const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
     if (!baseUrl || !authToken) {
-      resolve11(null);
+      resolve11({ data: null });
       return;
     }
     const validation = validateAnthropicBaseUrl(baseUrl);
     if (!validation.allowed) {
       console.error(`[SSRF Guard] Blocking usage API call: ${validation.reason}`);
-      resolve11(null);
+      resolve11({ data: null });
       return;
     }
     try {
@@ -20142,24 +20158,29 @@ function fetchUsageFromZai() {
           res.on("end", () => {
             if (res.statusCode === 200) {
               try {
-                resolve11(JSON.parse(data));
+                resolve11({ data: JSON.parse(data) });
               } catch {
-                resolve11(null);
+                resolve11({ data: null });
               }
+            } else if (res.statusCode === 429) {
+              if (process.env.OMC_DEBUG) {
+                console.error(`[usage-api] z.ai API returned 429 (rate limited)`);
+              }
+              resolve11({ data: null, rateLimited: true });
             } else {
-              resolve11(null);
+              resolve11({ data: null });
             }
           });
         }
       );
-      req.on("error", () => resolve11(null));
+      req.on("error", () => resolve11({ data: null }));
       req.on("timeout", () => {
         req.destroy();
-        resolve11(null);
+        resolve11({ data: null });
       });
       req.end();
     } catch {
-      resolve11(null);
+      resolve11({ data: null });
     }
   });
 }
@@ -20272,15 +20293,28 @@ async function getUsage() {
   const currentSource = isZai && authToken ? "zai" : "anthropic";
   const cache = readCache();
   if (cache && isCacheValid(cache) && cache.source === currentSource) {
-    return { rateLimits: cache.data, error: cache.error && !cache.data ? "network" : void 0 };
+    if (cache.rateLimited) {
+      return { rateLimits: cache.data, error: "rate_limited" };
+    }
+    const cachedError = cache.error && !cache.data ? cache.errorReason || "network" : void 0;
+    return { rateLimits: cache.data, error: cachedError };
   }
   if (isZai && authToken) {
-    const response = await fetchUsageFromZai();
-    if (!response) {
-      writeCache(null, true, "zai");
+    const result = await fetchUsageFromZai();
+    if (result.rateLimited) {
+      const prevCount = cache?.rateLimitedCount || 0;
+      const newCount = prevCount + 1;
+      writeCache(cache?.data || null, !cache?.data, "zai", true, newCount, "rate_limited");
+      if (cache?.data) {
+        return { rateLimits: cache.data, error: "rate_limited" };
+      }
+      return { rateLimits: null, error: "rate_limited" };
+    }
+    if (!result.data) {
+      writeCache(null, true, "zai", false, 0, "network");
       return { rateLimits: null, error: "network" };
     }
-    const usage = parseZaiResponse(response);
+    const usage = parseZaiResponse(result.data);
     writeCache(usage, !usage, "zai");
     return { rateLimits: usage };
   }
@@ -20293,29 +20327,38 @@ async function getUsage() {
           creds = { ...creds, ...refreshed };
           writeBackCredentials(creds);
         } else {
-          writeCache(null, true, "anthropic");
+          writeCache(null, true, "anthropic", false, 0, "auth");
           return { rateLimits: null, error: "auth" };
         }
       } else {
-        writeCache(null, true, "anthropic");
+        writeCache(null, true, "anthropic", false, 0, "auth");
         return { rateLimits: null, error: "auth" };
       }
     }
     if (creds) {
-      const response = await fetchUsageFromApi(creds.accessToken);
-      if (!response) {
-        writeCache(null, true, "anthropic");
+      const result = await fetchUsageFromApi(creds.accessToken);
+      if (result.rateLimited) {
+        const prevCount = cache?.rateLimitedCount || 0;
+        const newCount = prevCount + 1;
+        writeCache(cache?.data || null, !cache?.data, "anthropic", true, newCount, "rate_limited");
+        if (cache?.data) {
+          return { rateLimits: cache.data, error: "rate_limited" };
+        }
+        return { rateLimits: null, error: "rate_limited" };
+      }
+      if (!result.data) {
+        writeCache(null, true, "anthropic", false, 0, "network");
         return { rateLimits: null, error: "network" };
       }
-      const usage = parseUsageResponse(response);
+      const usage = parseUsageResponse(result.data);
       writeCache(usage, !usage, "anthropic");
       return { rateLimits: usage };
     }
   }
-  writeCache(null, true, "anthropic");
+  writeCache(null, true, "anthropic", false, 0, "no_credentials");
   return { rateLimits: null, error: "no_credentials" };
 }
-var import_fs72, import_path82, import_child_process22, import_crypto12, import_https3, CACHE_TTL_SUCCESS_MS, CACHE_TTL_FAILURE_MS, API_TIMEOUT_MS2, TOKEN_REFRESH_URL_HOSTNAME, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID;
+var import_fs72, import_path82, import_child_process22, import_crypto12, import_https3, CACHE_TTL_SUCCESS_MS, CACHE_TTL_FAILURE_MS, CACHE_TTL_RATE_LIMITED_MS, MAX_RATE_LIMITED_BACKOFF_MS, API_TIMEOUT_MS2, TOKEN_REFRESH_URL_HOSTNAME, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID;
 var init_usage_api = __esm({
   "src/hud/usage-api.ts"() {
     "use strict";
@@ -20328,6 +20371,8 @@ var init_usage_api = __esm({
     init_ssrf_guard();
     CACHE_TTL_SUCCESS_MS = 30 * 1e3;
     CACHE_TTL_FAILURE_MS = 15 * 1e3;
+    CACHE_TTL_RATE_LIMITED_MS = 120 * 1e3;
+    MAX_RATE_LIMITED_BACKOFF_MS = 600 * 1e3;
     API_TIMEOUT_MS2 = 1e4;
     TOKEN_REFRESH_URL_HOSTNAME = "platform.claude.com";
     TOKEN_REFRESH_URL_PATH = "/v1/oauth/token";
@@ -20819,9 +20864,9 @@ var init_model_contract = __esm({
         binary: "gemini",
         installInstructions: "Install Gemini CLI: npm install -g @google/gemini-cli",
         supportsPromptMode: true,
-        promptModeFlag: "-p",
+        promptModeFlag: "-i",
         buildLaunchArgs(model, extraFlags = []) {
-          const args = ["--approval-mode", "yolo", "-i"];
+          const args = ["--approval-mode", "yolo"];
           if (model) args.push("--model", model);
           return [...args, ...extraFlags];
         },
@@ -24562,6 +24607,7 @@ function renderRateLimitsWithBar(limits, barWidth = 8) {
 function renderRateLimitsError(result) {
   if (!result?.error) return null;
   if (result.error === "no_credentials") return null;
+  if (result.error === "rate_limited") return `${DIM4}[API 429]${RESET}`;
   if (result.error === "auth") return `${YELLOW6}[API auth]${RESET}`;
   return `${YELLOW6}[API err]${RESET}`;
 }
