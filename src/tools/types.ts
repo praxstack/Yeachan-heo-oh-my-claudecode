@@ -28,6 +28,8 @@ export interface ToolAnnotations {
   readOnlyHint?: boolean;
   /** If true, the tool may perform destructive operations (only meaningful when readOnlyHint is false). */
   destructiveHint?: boolean;
+  /** If true, the tool can be retried safely without side effects (only meaningful when readOnlyHint is false). */
+  idempotentHint?: boolean;
   /** If true, the tool may interact with the "real world" outside the computing environment. */
   openWorldHint?: boolean;
 }

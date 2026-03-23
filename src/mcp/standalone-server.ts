@@ -32,7 +32,7 @@ import { z } from 'zod';
 interface ToolDef {
   name: string;
   description: string;
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean };
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
   schema: z.ZodRawShape | z.ZodObject<z.ZodRawShape>;
   handler: (args: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 }
