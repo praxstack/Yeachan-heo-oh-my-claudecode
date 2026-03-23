@@ -243,6 +243,15 @@ World`);
         expect(detectKeywordsWithType('딥인터뷰 방법 소개해줘')).toHaveLength(0);
       });
 
+      it('Korean imperative command with 기능/방법 SHOULD trigger keyword (not filtered)', () => {
+        // "기능 켜줘" / "기능으로 진행해줘" — 기능 alone without a question verb is NOT informational
+        const autopilotResult = detectKeywordsWithType('오토파일럿 기능 켜고 버그 고쳐줘');
+        expect(autopilotResult.find((r) => r.type === 'autopilot')).toBeDefined();
+
+        const ralphResult = detectKeywordsWithType('랄프 기능으로 끝까지 진행해줘');
+        expect(ralphResult.find((r) => r.type === 'ralph')).toBeDefined();
+      });
+
       it('should NOT detect "don\'t stop" phrase', () => {
         const result = detectKeywordsWithType("Don't stop until done");
         const ralphMatch = result.find((r) => r.type === 'ralph');
