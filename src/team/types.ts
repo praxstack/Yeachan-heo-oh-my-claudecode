@@ -423,6 +423,9 @@ export type ReleaseTaskClaimResult =
 export interface TeamSummary {
   teamName: string;
   workerCount: number;
+  team_state_root?: string;
+  workspace_mode?: 'single' | 'worktree';
+  worktree_mode?: 'disabled' | 'detached' | 'branch';
   tasks: {
     total: number;
     pending: number;
@@ -431,7 +434,19 @@ export interface TeamSummary {
     completed: number;
     failed: number;
   };
-  workers: Array<{ name: string; alive: boolean; lastTurnAt: string | null; turnsWithoutProgress: number }>;
+  workers: Array<{
+    name: string;
+    alive: boolean;
+    lastTurnAt: string | null;
+    turnsWithoutProgress: number;
+    working_dir?: string;
+    worktree_repo_root?: string;
+    worktree_path?: string;
+    worktree_branch?: string;
+    worktree_detached?: boolean;
+    worktree_created?: boolean;
+    team_state_root?: string;
+  }>;
   nonReportingWorkers: string[];
   performance?: TeamSummaryPerformance;
 }
