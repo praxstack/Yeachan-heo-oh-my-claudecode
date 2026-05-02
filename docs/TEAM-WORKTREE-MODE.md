@@ -8,6 +8,7 @@ Native team worktree mode is the opt-in rollout path for running `omc team` work
 - The target runtime is `runtime-v2`. Legacy `runtime.ts` remains limited to read/status and cleanup compatibility unless a later plan explicitly expands it.
 - No new dependency is required; lifecycle operations use git worktrees plus the existing team CLI/API surfaces.
 - Backported OMX team behaviors are compatibility inputs only. The OMC-native contract remains `omc team ...`, `omc team api ... --json`, `OMC_TEAM_STATE_ROOT`, and `.omc/state/team/<team-name>`; `.omx` paths or `OMX_*` variables must not become native OMC state roots.
+- Backported OMX team behaviors are compatibility inputs only. The OMC-native contract remains `omc team ...`, `omc team api ... --json`, `OMC_TEAM_STATE_ROOT`, and `.omc/state/team/<team-name>`; `.omx` paths or `OMX_*` variables must not become native OMC state roots.
 
 ## Workspace contract
 
@@ -22,6 +23,8 @@ When worktree mode is active, OMC uses this stable layout:
 | Worker instructions             | Worktree-root `AGENTS.md` is installed with backup/restore safeguards                 |
 
 Workers must keep using `omc team api ...` lifecycle and mailbox operations against the team-specific coordination root. They must not create or mutate a separate local `.omc/state` inside their worker worktree when `OMC_TEAM_STATE_ROOT` is available; for worktree-backed workers it should point at `<repo>/.omc/state/team/<team-name>`.
+
+OMX-compatible aliases may be accepted at explicit interop boundaries for migrated workers, but OMC sessions should prefer OMC variables when both are present. Documentation, prompts, tests, and status output should present `omc team api` as the primary control surface unless a mixed-runtime compatibility mode is explicitly being described.
 
 OMX-compatible aliases may be accepted at explicit interop boundaries for migrated workers, but OMC sessions should prefer OMC variables when both are present. Documentation, prompts, tests, and status output should present `omc team api` as the primary control surface unless a mixed-runtime compatibility mode is explicitly being described.
 
@@ -68,6 +71,19 @@ Use this compact matrix when reviewing OMX-team behavior that is adapted into OM
 | State-root resolution             | `OMC_TEAM_STATE_ROOT` is authoritative for OMC workers; `.omx`/`OMX_*` is compatibility-only                                                                     | Inherited OMX env can silently switch CLI hints or state roots                             | Command-dialect and cwd-resolution tests with both OMC and OMX contexts                  |
 | Worker launch and model args      | OMC binary validation, CLI selection, launch-arg normalization, and role reasoning rules remain in force                                                         | Wholesale source launch code can weaken binary/path safety or model precedence             | Model-contract, runtime-v2 startup, tmux, and scaling launch tests                       |
 | Shutdown and cleanup              | Shutdown gates active work, preserves dirty worktrees, and cleans only the target team root                                                                      | Source cleanup semantics can remove sibling teams or dirty worker edits                    | Shutdown, cleanup, worktree safety, and status-count tests                               |
+
+## Backport parity matrix
+
+Use this compact matrix when reviewing OMX-team behavior that is adapted into OMC. Update the evidence column in PR notes when a row changes.
+
+| Behavior slice | OMC contract to preserve | Compatibility risk | Required evidence |
+| --- | --- | --- | --- |
+| Task lifecycle | Claim, transition, and release operations use bare task IDs through `omc team api`; task files remain `tasks/task-<id>.json` under `.omc/state/team/<team-name>` | Source imports may assume `.omx/state` or bypass claim tokens | Task lifecycle and locking tests, plus structured `transition-task-status` results |
+| Mailbox and dispatch | Mailbox delivery/notified state and dispatch requests stay under the team-specific OMC coordination root | Worker nudges can accidentally append `team/<name>` twice or address a local worktree root | Mailbox/API, dispatch hook, and worktree trigger-path tests |
+| Event, summary, and monitor state | API envelopes stay stable: `schema_version`, `timestamp`, `command`, `ok`, `operation`, and `data` or `error` | Partial API parity can expose source-like operations without target-side state semantics | Field-level API tests or an intentional rejection note for unsupported source operations |
+| State-root resolution | `OMC_TEAM_STATE_ROOT` is authoritative for OMC workers; `.omx`/`OMX_*` is compatibility-only | Inherited OMX env can silently switch CLI hints or state roots | Command-dialect and cwd-resolution tests with both OMC and OMX contexts |
+| Worker launch and model args | OMC binary validation, CLI selection, launch-arg normalization, and role reasoning rules remain in force | Wholesale source launch code can weaken binary/path safety or model precedence | Model-contract, runtime-v2 startup, tmux, and scaling launch tests |
+| Shutdown and cleanup | Shutdown gates active work, preserves dirty worktrees, and cleans only the target team root | Source cleanup semantics can remove sibling teams or dirty worker edits | Shutdown, cleanup, worktree safety, and status-count tests |
 
 ## Verification checklist for changes
 
