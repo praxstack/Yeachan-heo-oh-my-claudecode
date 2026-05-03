@@ -1,6 +1,22 @@
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { teamReadTaskApproval as readTaskApproval } from './team-ops.js';
 const DEFAULT_SPARKSHELL_TAIL_LINES = 400;
+function resolveRecommendedTeamDir(cwd, teamName, teamStateRoot) {
+    const trimmedStateRoot = typeof teamStateRoot === 'string' ? teamStateRoot.trim() : '';
+    if (!trimmedStateRoot)
+        return join(resolve(cwd), '.omc', 'state', 'team', teamName);
+    const resolvedStateRoot = resolve(cwd, trimmedStateRoot);
+    const normalizedStateRoot = resolvedStateRoot.replace(/[\/]+$/, '');
+    if (basename(normalizedStateRoot) === teamName && basename(dirname(normalizedStateRoot)) === 'team') {
+        return normalizedStateRoot;
+    }
+    return join(normalizedStateRoot, 'team', teamName);
+}
+function resolveRecommendedTeamPath(cwd, teamName, teamStateRoot, ...segments) {
+    if (!teamName)
+        return null;
+    return join(resolveRecommendedTeamDir(cwd, teamName, teamStateRoot), ...segments);
+}
 export async function readTeamPaneStatus(config, cwd = process.cwd(), snapshot, tailLines = DEFAULT_SPARKSHELL_TAIL_LINES) {
     if (!config) {
         return {
@@ -237,7 +253,7 @@ export async function readTeamPaneStatus(config, cwd = process.cwd(), snapshot, 
     }));
     const recommendedInspectTaskClaimLockPaths = Object.fromEntries(recommendedInspectTargets.map((target) => {
         const taskId = recommendedInspectTasks[target];
-        return [target, taskId && snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'claims', `task-${taskId}.lock`) : null];
+        return [target, taskId && snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'claims', `task-${taskId}.lock`) : null];
     }));
     const recommendedInspectRequiresCodeChange = Object.fromEntries(recommendedInspectTargets.map((target) => {
         const taskId = recommendedInspectTasks[target];
@@ -299,75 +315,75 @@ export async function readTeamPaneStatus(config, cwd = process.cwd(), snapshot, 
     }));
     const recommendedInspectTaskPaths = Object.fromEntries(recommendedInspectTargets.map((target) => {
         const taskId = recommendedInspectTasks[target];
-        return [target, taskId && snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'tasks', `task-${taskId}.json`) : null];
+        return [target, taskId && snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'tasks', `task-${taskId}.json`) : null];
     }));
     const recommendedInspectApprovalPaths = Object.fromEntries(recommendedInspectTargets.map((target) => {
         const taskId = recommendedInspectTasks[target];
-        return [target, taskId && snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'approvals', `task-${taskId}.json`) : null];
+        return [target, taskId && snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'approvals', `task-${taskId}.json`) : null];
     }));
     const recommendedInspectWorkerStateDirs = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target) : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target) : null,
     ]));
     const recommendedInspectWorkerStatusPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'status.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'status.json') : null,
     ]));
     const recommendedInspectWorkerHeartbeatPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'heartbeat.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'heartbeat.json') : null,
     ]));
     const recommendedInspectWorkerIdentityPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'identity.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'identity.json') : null,
     ]));
     const recommendedInspectWorkerInboxPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'inbox.md') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'inbox.md') : null,
     ]));
     const recommendedInspectWorkerMailboxPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'mailbox', `${target}.json`) : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'mailbox', `${target}.json`) : null,
     ]));
     const recommendedInspectWorkerShutdownRequestPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'shutdown-request.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'shutdown-request.json') : null,
     ]));
     const recommendedInspectWorkerShutdownAckPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'workers', target, 'shutdown-ack.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'workers', target, 'shutdown-ack.json') : null,
     ]));
     const recommendedInspectTeamConfigPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'config.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'config.json') : null,
     ]));
     const recommendedInspectTeamManifestPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'manifest.v2.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'manifest.v2.json') : null,
     ]));
     const recommendedInspectTeamEventsPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'events', 'events.ndjson') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'events', 'events.ndjson') : null,
     ]));
     const recommendedInspectTeamDispatchPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'dispatch', 'requests.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'dispatch', 'requests.json') : null,
     ]));
     const recommendedInspectTeamDirPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName) : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target]) : null,
     ]));
     const recommendedInspectTeamPhasePaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'phase.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'phase.json') : null,
     ]));
     const recommendedInspectTeamMonitorSnapshotPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'monitor-snapshot.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'monitor-snapshot.json') : null,
     ]));
     const recommendedInspectTeamSummarySnapshotPaths = Object.fromEntries(recommendedInspectTargets.map((target) => [
         target,
-        snapshot?.teamName ? join(cwd, '.omx', 'state', 'team', snapshot.teamName, 'summary-snapshot.json') : null,
+        snapshot?.teamName ? resolveRecommendedTeamPath(cwd, snapshot.teamName, recommendedInspectTeamStateRoots[target], 'summary-snapshot.json') : null,
     ]));
     const recommendedInspectStates = Object.fromEntries(recommendedInspectTargets.map((target) => {
         const worker = snapshotWorkers.find((candidate) => candidate.name === target);

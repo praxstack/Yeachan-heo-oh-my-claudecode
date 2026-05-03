@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildTeamCommitHygieneContext,
   renderTeamCommitHygieneMarkdown,
   resolveTeamCommitHygieneArtifactCwd,
+  resolveTeamCommitHygieneArtifactPaths,
   TEAM_OPERATIONAL_COMMIT_KINDS,
   TEAM_OPERATIONAL_COMMIT_STATUSES,
+  writeTeamCommitHygieneContext,
   type TeamCommitHygieneLedger,
 } from '../commit-hygiene.js';
 import type { TeamTask } from '../types.js';
@@ -110,5 +115,38 @@ describe('team commit hygiene artifact root', () => {
       workers: [],
       team_state_root: `${leaderCwd}/.omc/state`,
     }, workerCwd)).toBe(leaderCwd);
+  });
+
+  it('resolves and writes leader-facing artifacts under .omc reports without .omx leakage', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'omc-commit-hygiene-'));
+    const teamName = 'team-hygiene';
+
+    try {
+      const paths = resolveTeamCommitHygieneArtifactPaths(teamName, repo);
+
+      expect(paths.jsonPath).toBe(join(repo, '.omc', 'reports', 'team-commit-hygiene', `${teamName}.context.json`));
+      expect(paths.markdownPath).toBe(join(repo, '.omc', 'reports', 'team-commit-hygiene', `${teamName}.md`));
+      expect(JSON.stringify(paths)).not.toContain('.omx/');
+
+      const written = await writeTeamCommitHygieneContext(teamName, buildTeamCommitHygieneContext({
+        teamName,
+        tasks: [],
+        ledger: {
+          version: 1,
+          team_name: teamName,
+          updated_at: '2026-04-26T00:00:00.000Z',
+          runtime_commits_are_scaffolding: true,
+          entries: [],
+        },
+      }), repo);
+
+      expect(written).toEqual(paths);
+      expect(existsSync(paths.jsonPath)).toBe(true);
+      expect(existsSync(paths.markdownPath)).toBe(true);
+      expect(existsSync(join(repo, '.omx', 'reports', 'team-commit-hygiene', `${teamName}.context.json`))).toBe(false);
+      expect(readFileSync(paths.markdownPath, 'utf-8')).not.toContain('.omx/');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

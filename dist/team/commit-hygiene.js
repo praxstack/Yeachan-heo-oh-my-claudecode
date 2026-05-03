@@ -52,7 +52,7 @@ export function resolveTeamCommitHygieneArtifactCwd(config, cwd) {
     return resolve(cwd);
 }
 function commitHygieneReportsDir(cwd) {
-    return join(resolve(cwd), '.omx', 'reports', 'team-commit-hygiene');
+    return join(resolve(cwd), '.omc', 'reports', 'team-commit-hygiene');
 }
 function ledgerPathFor(teamName, cwd) {
     return join(commitHygieneReportsDir(cwd), `${teamName}.ledger.json`);

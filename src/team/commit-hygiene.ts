@@ -139,7 +139,7 @@ export function resolveTeamCommitHygieneArtifactCwd(
 }
 
 function commitHygieneReportsDir(cwd: string): string {
-  return join(resolve(cwd), '.omx', 'reports', 'team-commit-hygiene')
+  return join(resolve(cwd), '.omc', 'reports', 'team-commit-hygiene')
 }
 
 function ledgerPathFor(teamName: string, cwd: string): string {

@@ -103,11 +103,15 @@ describe('shutdown fallback worktree recovery', () => {
       expect(readFileSync(join(worktreePath, 'worker-note.txt'), 'utf-8')).toBe('from worker\n');
       expect(existsSync(teamRoot)).toBe(true);
       expect(existsSync(join(teamRoot, 'worktrees.json'))).toBe(true);
-      expect(readFileSync(join(teamRoot, 'workers', workerName, 'inbox.md'), 'utf-8'))
+      const shutdownInbox = readFileSync(join(teamRoot, 'workers', workerName, 'inbox.md'), 'utf-8');
+      expect(shutdownInbox)
         .toContain('$OMC_TEAM_STATE_ROOT/workers/worker-dirty/shutdown-ack.json');
+      expect(shutdownInbox).not.toContain('$OMX_TEAM_STATE_ROOT');
+      expect(shutdownInbox).not.toContain('.omx/');
       expect(existsSync(join(repo, 'worker-note.txt'))).toBe(false);
       expect(existsSync(join(worktreePath, '.omx', 'diff.md'))).toBe(false);
       expect(existsSync(join(repo, '.omx', 'reports', 'team-commit-hygiene', `${teamName}.context.json`))).toBe(false);
+      expect(existsSync(join(repo, '.omc', 'reports', 'team-commit-hygiene', `${teamName}.context.json`))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
