@@ -63,8 +63,15 @@ export function prepareOmcLaunchConfigDir(baseConfigDir = getClaudeConfigDir()) 
         return baseConfigDir;
     }
     const runtimeConfigDir = join(baseConfigDir, OMC_RUNTIME_DIRNAME);
+    const runtimeClaudeJsonPath = join(runtimeConfigDir, '.claude.json');
+    const preservedClaudeJson = existsSync(runtimeClaudeJsonPath)
+        ? readFileSync(runtimeClaudeJsonPath)
+        : null;
     rmSync(runtimeConfigDir, { recursive: true, force: true });
     mkdirSync(runtimeConfigDir, { recursive: true });
+    if (preservedClaudeJson) {
+        writeFileSync(runtimeClaudeJsonPath, preservedClaudeJson);
+    }
     copyFileSync(companionPath, join(runtimeConfigDir, 'CLAUDE.md'));
     for (const entry of [
         'agents',
@@ -513,6 +520,9 @@ function runClaudeOutsideTmux(cwd, args, _sessionId, options = {}) {
         tmuxExec(['attach-session', '-t', sessionName], { stripTmux: true, stdio: 'inherit' });
     }
     catch {
+        if (options.requireTmux) {
+            abortMadmaxRequiresTmux('launch-failed');
+        }
         // If the detached session still exists, preserve it so interrupted
         // attach paths (SSH disconnect, terminal drop, etc.) do not kill or
         // duplicate a valid Claude session.
@@ -521,9 +531,6 @@ function runClaudeOutsideTmux(cwd, args, _sessionId, options = {}) {
             return;
         }
         catch {
-            if (options.requireTmux) {
-                abortMadmaxRequiresTmux('launch-failed');
-            }
             runClaudeDirect(cwd, args);
         }
     }

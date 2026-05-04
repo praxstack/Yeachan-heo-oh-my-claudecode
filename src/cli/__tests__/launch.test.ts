@@ -1528,6 +1528,29 @@ describe('runClaude — --madmax on macOS forces tmux', () => {
     expect(claudeCall).toBeUndefined();
   });
 
+  it('exits 1 when tmux attach fails under --madmax even if detached session exists', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    vi.mocked(isTmuxAvailable).mockReturnValue(true);
+    vi.mocked(resolveLaunchPolicy).mockReturnValue('outside-tmux');
+    vi.mocked(tmuxExec).mockImplementation((tmuxArgs: string[]) => {
+      if (tmuxArgs[0] === 'attach-session') {
+        throw new Error('tmux attach-session failed');
+      }
+      return '';
+    });
+
+    runClaude('/tmp', ['--madmax'], 'sid');
+
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    const messages = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
+    expect(messages).toContain('launching tmux failed');
+    const tmuxCalls = vi.mocked(tmuxExec).mock.calls.map(([tmuxArgs]) => tmuxArgs[0]);
+    expect(tmuxCalls).toContain('attach-session');
+    expect(tmuxCalls).not.toContain('has-session');
+    const claudeCall = vi.mocked(execFileSync).mock.calls.find(([cmd]) => cmd === 'claude');
+    expect(claudeCall).toBeUndefined();
+  });
+
   it('preserves the existing direct fallback when tmux new-session fails WITHOUT --madmax', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     vi.mocked(isTmuxAvailable).mockReturnValue(true);

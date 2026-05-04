@@ -574,6 +574,9 @@ function runClaudeOutsideTmux(
   try {
     tmuxExec(['attach-session', '-t', sessionName], { stripTmux: true, stdio: 'inherit' });
   } catch {
+    if (options.requireTmux) {
+      abortMadmaxRequiresTmux('launch-failed');
+    }
     // If the detached session still exists, preserve it so interrupted
     // attach paths (SSH disconnect, terminal drop, etc.) do not kill or
     // duplicate a valid Claude session.
@@ -581,9 +584,6 @@ function runClaudeOutsideTmux(
       tmuxExec(['has-session', '-t', sessionName], { stripTmux: true, stdio: 'ignore' });
       return;
     } catch {
-      if (options.requireTmux) {
-        abortMadmaxRequiresTmux('launch-failed');
-      }
       runClaudeDirect(cwd, args);
     }
   }
