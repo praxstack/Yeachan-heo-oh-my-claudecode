@@ -70,6 +70,13 @@ If you prefer the npm CLI/runtime path instead of the marketplace flow:
 npm i -g oh-my-claude-sisyphus@latest
 ```
 
+> **Known npm warning:** npm may print `deprecated prebuild-install@7.1.3` during the CLI install.
+> This currently comes from the upstream `better-sqlite3` native-addon dependency
+> (`better-sqlite3 -> prebuild-install`); `prebuild-install@7.1.3` is still the latest
+> published version, so there is no safe repo-side dependency bump or override to remove
+> the warning yet. The warning is tracked in [#2913](https://github.com/Yeachan-Heo/oh-my-claudecode/issues/2913)
+> and does not by itself mean the OMC CLI install failed.
+
 **Step 2: Setup**
 
 ```bash
