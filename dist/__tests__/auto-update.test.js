@@ -22,10 +22,12 @@ vi.mock('fs', async () => {
         mkdirSync: vi.fn(),
         readFileSync: vi.fn(),
         writeFileSync: vi.fn(),
+        renameSync: vi.fn(),
+        rmSync: vi.fn(),
     };
 });
 import { execSync, execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { install, isProjectScopedPlugin, checkNodeVersion, CLAUDE_CONFIG_DIR } from '../installer/index.js';
 import { reconcileUpdateRuntime, performUpdate, shouldBlockStandaloneUpdateInCurrentSession, syncPluginCache, fetchLatestRelease, } from '../features/auto-update.js';
@@ -36,6 +38,7 @@ const mockedExistsSync = vi.mocked(existsSync);
 const mockedMkdirSync = vi.mocked(mkdirSync);
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedWriteFileSync = vi.mocked(writeFileSync);
+const mockedRenameSync = vi.mocked(renameSync);
 const mockedInstall = vi.mocked(install);
 const mockedIsProjectScopedPlugin = vi.mocked(isProjectScopedPlugin);
 const mockedCheckNodeVersion = vi.mocked(checkNodeVersion);
@@ -56,6 +59,7 @@ describe('auto-update reconciliation', () => {
         mockedCpSync.mockImplementation(() => undefined);
         mockedExistsSync.mockReturnValue(true);
         mockedIsProjectScopedPlugin.mockReturnValue(false);
+        mockedRenameSync.mockImplementation(() => undefined);
         mockedReadFileSync.mockImplementation((path) => {
             if (String(path).includes('.omc-version.json')) {
                 return JSON.stringify({
@@ -303,6 +307,121 @@ describe('auto-update reconciliation', () => {
         expect(result.success).toBe(true);
         expect(mockedCpSync).not.toHaveBeenCalled();
         expect(consoleLogSpy).not.toHaveBeenCalledWith('[omc update] Synced plugin cache');
+    });
+    it('updates installed_plugins.json to the new cache version after plugin cache sync succeeds', () => {
+        const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+        const oldRoot = join(cacheRoot, '4.14.0');
+        const newRoot = join(cacheRoot, '4.14.1');
+        const installedPluginsPath = join(CLAUDE_CONFIG_DIR, 'plugins', 'installed_plugins.json');
+        mockedExecSync.mockImplementation((command) => {
+            if (command === 'npm root -g') {
+                return '/usr/lib/node_modules\n';
+            }
+            return '';
+        });
+        mockedReadFileSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            if (normalized === '/usr/lib/node_modules/oh-my-claude-sisyphus/package.json') {
+                return JSON.stringify({ version: '4.14.1' });
+            }
+            if (normalized.endsWith('/plugins/installed_plugins.json')) {
+                return JSON.stringify({
+                    version: 2,
+                    plugins: {
+                        'oh-my-claudecode@omc': [{ installPath: oldRoot, version: '4.14.0', enabled: true }],
+                    },
+                });
+            }
+            return '';
+        });
+        mockedExistsSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            return normalized.endsWith('/plugins/cache/omc/oh-my-claudecode')
+                || normalized.endsWith('/plugins/installed_plugins.json')
+                || normalized.startsWith('/usr/lib/node_modules/oh-my-claude-sisyphus');
+        });
+        const result = syncPluginCache(false);
+        expect(result.errors).toEqual([]);
+        expect(mockedWriteFileSync).toHaveBeenCalledWith(expect.stringContaining('installed_plugins.json.tmp-'), expect.stringContaining('"version": "4.14.1"'));
+        const written = String(mockedWriteFileSync.mock.calls.find(([path]) => String(path).includes('installed_plugins.json.tmp-'))?.[1]);
+        expect(written).toContain(`"installPath": "${newRoot.replace(/\\/g, '\\\\')}"`);
+        expect(mockedRenameSync).toHaveBeenCalledWith(expect.stringContaining('installed_plugins.json.tmp-'), installedPluginsPath);
+    });
+    it('preserves Windows-style installPath separators when rewriting installed_plugins.json', () => {
+        const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+        const oldWindowsRoot = 'C:\\Users\\bellman\\.claude\\plugins\\cache\\omc\\oh-my-claudecode\\4.14.0';
+        const newWindowsRoot = 'C:\\Users\\bellman\\.claude\\plugins\\cache\\omc\\oh-my-claudecode\\4.14.1';
+        mockedExecSync.mockImplementation((command) => {
+            if (command === 'npm root -g') {
+                return 'C:\\Users\\bellman\\AppData\\Roaming\\npm\\node_modules\r\n';
+            }
+            return '';
+        });
+        mockedReadFileSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            if (normalized === 'C:/Users/bellman/AppData/Roaming/npm/node_modules/oh-my-claude-sisyphus/package.json') {
+                return JSON.stringify({ version: '4.14.1' });
+            }
+            if (normalized.endsWith('/plugins/installed_plugins.json')) {
+                return JSON.stringify({
+                    version: 2,
+                    plugins: {
+                        'oh-my-claudecode@omc': [{ installPath: oldWindowsRoot, version: '4.14.0' }],
+                    },
+                });
+            }
+            return '';
+        });
+        mockedExistsSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            return normalized === cacheRoot.replace(/\\/g, '/')
+                || normalized.endsWith('/plugins/installed_plugins.json')
+                || normalized.startsWith('C:/Users/bellman/AppData/Roaming/npm/node_modules/oh-my-claude-sisyphus');
+        });
+        const result = syncPluginCache(false);
+        expect(result.errors).toEqual([]);
+        const written = String(mockedWriteFileSync.mock.calls.find(([path]) => String(path).includes('installed_plugins.json.tmp-'))?.[1]);
+        expect(JSON.parse(written).plugins['oh-my-claudecode@omc'][0]).toMatchObject({
+            version: '4.14.1',
+            installPath: newWindowsRoot,
+        });
+    });
+    it('does not rewrite installed_plugins.json when plugin cache sync reports copy errors', () => {
+        const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+        mockedExecSync.mockImplementation((command) => {
+            if (command === 'npm root -g') {
+                return '/usr/lib/node_modules\n';
+            }
+            return '';
+        });
+        mockedReadFileSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            if (normalized === '/usr/lib/node_modules/oh-my-claude-sisyphus/package.json') {
+                return JSON.stringify({ version: '4.14.1' });
+            }
+            if (normalized.endsWith('/plugins/installed_plugins.json')) {
+                return JSON.stringify({
+                    version: 2,
+                    plugins: {
+                        'oh-my-claudecode@omc': [{ installPath: join(cacheRoot, '4.14.0'), version: '4.14.0' }],
+                    },
+                });
+            }
+            return '';
+        });
+        mockedExistsSync.mockImplementation((path) => {
+            const normalized = String(path).replace(/\\/g, '/');
+            return normalized.endsWith('/plugins/cache/omc/oh-my-claudecode')
+                || normalized.endsWith('/plugins/installed_plugins.json')
+                || normalized.startsWith('/usr/lib/node_modules/oh-my-claude-sisyphus');
+        });
+        mockedCpSync.mockImplementationOnce(() => {
+            throw new Error('copy failed');
+        });
+        const result = syncPluginCache(false);
+        expect(result.errors).toContain(`Failed to sync dist to ${join(cacheRoot, '4.14.1')}: copy failed`);
+        expect(mockedWriteFileSync.mock.calls.some(([path]) => String(path).includes('installed_plugins.json.tmp-'))).toBe(false);
+        expect(mockedRenameSync).not.toHaveBeenCalledWith(expect.stringContaining('installed_plugins.json.tmp-'), expect.anything());
     });
     it('syncs the plugin cache directory when cache root exists', () => {
         const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => { });

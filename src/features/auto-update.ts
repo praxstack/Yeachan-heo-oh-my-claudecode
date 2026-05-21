@@ -10,7 +10,7 @@
  * - Configurable update notifications
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { execSync, execFileSync } from 'child_process';
 import { TaskTool } from '../hooks/beads-context/types.js';
@@ -232,6 +232,112 @@ function syncMarketplaceClone(verbose: boolean = false): { ok: boolean; message:
   return { ok: true, message: 'Marketplace clone updated' };
 }
 
+function replaceLastPathSegmentPreservingSeparators(pathValue: string, nextSegment: string): string {
+  const trimmed = pathValue.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const trailingSeparator = /[\\/]$/.test(trimmed) ? trimmed.slice(-1) : '';
+  const withoutTrailingSeparator = trailingSeparator ? trimmed.slice(0, -1) : trimmed;
+  const lastSeparatorIndex = Math.max(withoutTrailingSeparator.lastIndexOf('/'), withoutTrailingSeparator.lastIndexOf('\\'));
+
+  if (lastSeparatorIndex < 0) {
+    return `${nextSegment}${trailingSeparator}`;
+  }
+
+  return `${withoutTrailingSeparator.slice(0, lastSeparatorIndex + 1)}${nextSegment}${trailingSeparator}`;
+}
+
+function deriveUpdatedPluginInstallPath(
+  existingInstallPath: string | undefined,
+  fallbackInstallPath: string,
+  newVersion: string,
+): string {
+  if (existingInstallPath?.trim()) {
+    const normalized = existingInstallPath.replace(/\\/g, '/').toLowerCase();
+    if (normalized.includes('/plugins/cache/') && normalized.includes('/oh-my-claudecode/')) {
+      return replaceLastPathSegmentPreservingSeparators(existingInstallPath, newVersion);
+    }
+  }
+
+  return fallbackInstallPath;
+}
+
+function writeJsonAtomically(path: string, value: unknown): void {
+  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`);
+    renameSync(tempPath, path);
+  } catch (error) {
+    try {
+      rmSync(tempPath, { force: true });
+    } catch {
+      // Best-effort cleanup only; preserve the original registry on failure.
+    }
+    throw error;
+  }
+}
+
+function syncInstalledPluginRegistryVersion(
+  newVersion: string,
+  fallbackInstallPath: string,
+): { updated: boolean; errors: string[] } {
+  const installedPluginsPath = join(getClaudeConfigDir(), 'plugins', 'installed_plugins.json');
+  if (!existsSync(installedPluginsPath)) {
+    return { updated: false, errors: [] };
+  }
+
+  try {
+    const rawText = readFileSync(installedPluginsPath, 'utf-8');
+    if (!rawText.trim()) {
+      return { updated: false, errors: [] };
+    }
+
+    const raw = JSON.parse(rawText) as unknown;
+    if (!raw || typeof raw !== 'object') {
+      return { updated: false, errors: ['installed_plugins.json has unexpected top-level structure'] };
+    }
+
+    const root = raw as Record<string, unknown>;
+    const pluginsValue = root.plugins && typeof root.plugins === 'object' ? root.plugins : root;
+    const plugins = pluginsValue as Record<string, unknown>;
+    let updated = false;
+
+    for (const [pluginId, entriesValue] of Object.entries(plugins)) {
+      const normalizedPluginId = pluginId.toLowerCase();
+      const isOmcPlugin = normalizedPluginId === 'oh-my-claudecode@omc'
+        || normalizedPluginId === 'oh-my-claudecode';
+      if (!isOmcPlugin || !Array.isArray(entriesValue)) {
+        continue;
+      }
+
+      for (const entry of entriesValue) {
+        if (!entry || typeof entry !== 'object') {
+          continue;
+        }
+        const pluginEntry = entry as Record<string, unknown>;
+        const existingInstallPath = typeof pluginEntry.installPath === 'string' ? pluginEntry.installPath : undefined;
+        pluginEntry.version = newVersion;
+        pluginEntry.installPath = deriveUpdatedPluginInstallPath(existingInstallPath, fallbackInstallPath, newVersion);
+        updated = true;
+      }
+    }
+
+    if (!updated) {
+      return { updated: false, errors: [] };
+    }
+
+    writeJsonAtomically(installedPluginsPath, raw);
+    return { updated: true, errors: [] };
+  } catch (error) {
+    return {
+      updated: false,
+      errors: [`Failed to update installed_plugins.json: ${error instanceof Error ? error.message : error}`],
+    };
+  }
+}
+
 function syncActivePluginCache(): { synced: boolean; errors: string[] } {
   const result = syncInstalledPluginPayload();
 
@@ -295,6 +401,17 @@ export function syncPluginCache(verbose: boolean = false): { synced: boolean; sk
     if (result.errors.length > 0) {
       for (const error of result.errors) {
         console.warn(`[omc update] Plugin cache sync warning: ${error}`);
+      }
+    }
+
+    if (result.synced && result.errors.length === 0) {
+      // Keep Claude Code's plugin registry update after a successful cache copy.
+      // If copying fails, installed_plugins.json is left untouched so sessions do
+      // not point at a partially refreshed version directory.
+      const registryResult = syncInstalledPluginRegistryVersion(version, versionedPluginCacheRoot);
+      result.errors.push(...registryResult.errors);
+      if (registryResult.updated && verbose) {
+        console.log('[omc update] Updated Claude plugin registry');
       }
     }
 
