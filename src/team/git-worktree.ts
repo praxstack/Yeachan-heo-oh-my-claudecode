@@ -256,11 +256,16 @@ export function installWorktreeRootAgents(
   worktreePath: string,
   overlayContent: string,
 ): void {
-  validateResolvedPath(worktreePath, repoRoot);
+  // The worker worktree, its root AGENTS.md, and the backup all live under
+  // getOmcRoot(repoRoot) — which in a .omc-workspace layout sits ABOVE repoRoot.
+  // Validate against the shared OMC root (and the worktree itself for AGENTS.md),
+  // not the sub-repo, or multi-repo writes throw false path-traversal errors.
+  const omcRoot = getOmcRoot(repoRoot);
+  validateResolvedPath(worktreePath, omcRoot);
   const agentsPath = join(worktreePath, 'AGENTS.md');
-  validateResolvedPath(agentsPath, repoRoot);
+  validateResolvedPath(agentsPath, worktreePath);
   const backupPath = getRootAgentsBackupPath(repoRoot, teamName, workerName);
-  validateResolvedPath(backupPath, repoRoot);
+  validateResolvedPath(backupPath, omcRoot);
   ensureDirWithMode(getWorkerStateDir(repoRoot, teamName, workerName));
 
   const previous = readRootAgentsBackup(repoRoot, teamName, workerName);
@@ -295,13 +300,14 @@ export function restoreWorktreeRootAgents(
   repoRoot: string,
   worktreePath?: string,
 ): WorktreeRootAgentsRestoreResult {
+  const omcRoot = getOmcRoot(repoRoot);
   const backupPath = getRootAgentsBackupPath(repoRoot, teamName, workerName);
-  validateResolvedPath(backupPath, repoRoot);
+  validateResolvedPath(backupPath, omcRoot);
   const backup = readRootAgentsBackup(repoRoot, teamName, workerName);
   if (!backup) return { restored: false, reason: 'no_backup' };
 
   const resolvedWorktreePath = worktreePath ?? backup.worktreePath;
-  validateResolvedPath(resolvedWorktreePath, repoRoot);
+  validateResolvedPath(resolvedWorktreePath, omcRoot);
   if (!existsSync(resolvedWorktreePath)) {
     try {
       unlinkSync(backupPath);
@@ -310,7 +316,7 @@ export function restoreWorktreeRootAgents(
   }
 
   const agentsPath = join(resolvedWorktreePath, 'AGENTS.md');
-  validateResolvedPath(agentsPath, repoRoot);
+  validateResolvedPath(agentsPath, resolvedWorktreePath);
   const currentContent = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf-8') : undefined;
 
   const isPartialInstallOriginal = backup.hadOriginal && currentContent === (backup.originalContent ?? '');
@@ -383,7 +389,7 @@ function listRootAgentsBackupIssues(repoRoot: string, teamName: string, entries:
 /** Write native worktree metadata. */
 function writeMetadata(repoRoot: string, teamName: string, entries: WorktreeInfo[]): void {
   const metaPath = getMetadataPath(repoRoot, teamName);
-  validateResolvedPath(metaPath, repoRoot);
+  validateResolvedPath(metaPath, join(getOmcRoot(repoRoot), 'state', 'team'));
   ensureDirWithMode(join(getOmcRoot(repoRoot), 'state', 'team', sanitizeName(teamName)));
   atomicWriteJson(metaPath, entries);
 }
@@ -463,7 +469,7 @@ export function ensureWorkerWorktree(
 
   const wtPath = getWorktreePath(repoRoot, teamName, workerName);
   const branch = mode === 'named' ? getBranchName(teamName, workerName) : 'HEAD';
-  validateResolvedPath(wtPath, repoRoot);
+  validateResolvedPath(wtPath, join(getOmcRoot(repoRoot), 'team'));
 
   try {
     execFileSync('git', ['worktree', 'prune'], { cwd: repoRoot, stdio: 'pipe' });
@@ -551,7 +557,7 @@ export function checkWorkerWorktreeRemovalSafety(
   let ignoreRootAgents = false;
   if (backup) {
     const agentsPath = join(wtPath, 'AGENTS.md');
-    validateResolvedPath(agentsPath, repoRoot);
+    validateResolvedPath(agentsPath, wtPath);
     const currentContent = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf-8') : undefined;
     const isPartialInstallOriginal = backup.hadOriginal && currentContent === (backup.originalContent ?? '');
     if (currentContent !== undefined && currentContent !== backup.installedContent && !isPartialInstallOriginal) {

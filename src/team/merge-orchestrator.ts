@@ -352,8 +352,10 @@ export async function startMergeOrchestrator(
   const drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
   const mergerPath = mergerWorktreePathFor(config.repoRoot, config.teamName);
 
-  // Validate paths stay under repoRoot (defence-in-depth).
-  validateResolvedPath(mergerPath, config.repoRoot);
+  // Validate paths stay under the shared OMC team root (defence-in-depth).
+  // mergerPath lives under getOmcRoot(...)/team, which in a .omc-workspace
+  // layout is ABOVE repoRoot — validating against repoRoot would false-positive.
+  validateResolvedPath(mergerPath, join(getOmcRoot(config.repoRoot), 'team'));
 
   // Bootstrap merger worktree + leader inbox.
   ensureMergerWorktree(config.repoRoot, mergerPath, config.leaderBranch);

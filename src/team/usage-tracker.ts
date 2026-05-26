@@ -58,7 +58,10 @@ export function recordTaskUsage(
 ): void {
   const logPath = getUsageLogPath(workingDirectory, teamName);
   const dir = join(getOmcRoot(workingDirectory), 'logs');
-  validateResolvedPath(logPath, workingDirectory);
+  // logPath lives under getOmcRoot(...)/logs, which in a .omc-workspace layout
+  // is ABOVE workingDirectory. Validate against the shared logs dir (still
+  // catches teamName traversal) instead of the sub-repo.
+  validateResolvedPath(logPath, dir);
   ensureDirWithMode(dir);
   appendFileWithMode(logPath, JSON.stringify(record) + '\n');
 }

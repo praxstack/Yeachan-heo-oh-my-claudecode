@@ -97,7 +97,10 @@ export function recordRestart(
   policy: RestartPolicy = DEFAULT_POLICY
 ): void {
   const statePath = getRestartStatePath(workingDirectory, teamName, workerName);
-  validateResolvedPath(statePath, workingDirectory);
+  // statePath lives under getOmcRoot(...)/state/team-bridge, which in a
+  // .omc-workspace layout is ABOVE workingDirectory. Validate against the shared
+  // team-bridge dir (still catches teamName/workerName traversal) not the sub-repo.
+  validateResolvedPath(statePath, join(getOmcRoot(workingDirectory), 'state', 'team-bridge'));
 
   const dir = join(getOmcRoot(workingDirectory), 'state', 'team-bridge', teamName);
   ensureDirWithMode(dir);
